@@ -8,12 +8,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsumiru/src/widgets/desktop/desktop_window_scaffold.dart';
 
 void main() {
-  test('fullscreen reader hides the desktop title bar', () {
+  test('fullscreen reader hides title bar while chrome is hidden', () {
     final location = Uri.parse('/manga/42/chapter/7');
 
     expect(
-      showDesktopTitleBarForLocation(location, readerFullscreen: true),
+      showDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: true,
+        readerChromeVisible: false,
+      ),
       isFalse,
+    );
+  });
+
+  test('fullscreen reader shows title bar while chrome is visible', () {
+    final location = Uri.parse('/manga/42/chapter/7');
+
+    expect(
+      showDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: true,
+        readerChromeVisible: true,
+      ),
+      isTrue,
     );
   });
 
@@ -21,7 +38,11 @@ void main() {
     final location = Uri.parse('/manga/42/chapter/7');
 
     expect(
-      showDesktopTitleBarForLocation(location, readerFullscreen: false),
+      showDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: false,
+        readerChromeVisible: false,
+      ),
       isTrue,
     );
   });
@@ -30,7 +51,11 @@ void main() {
     final location = Uri.parse('/more/settings/reader');
 
     expect(
-      showDesktopTitleBarForLocation(location, readerFullscreen: true),
+      showDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: true,
+        readerChromeVisible: false,
+      ),
       isTrue,
     );
   });

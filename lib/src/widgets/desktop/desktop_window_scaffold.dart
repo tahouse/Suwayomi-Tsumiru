@@ -12,13 +12,14 @@ import 'desktop_title_bar.dart';
 bool showDesktopTitleBarForLocation(
   Uri location, {
   required bool readerFullscreen,
+  required bool readerChromeVisible,
 }) {
   final segments = location.pathSegments;
   final isReader =
       segments.length == 4 &&
       segments[0] == 'manga' &&
       segments[2] == 'chapter';
-  return !readerFullscreen || !isReader;
+  return !readerFullscreen || !isReader || readerChromeVisible;
 }
 
 /// Wraps the app with the custom title bar on desktop. A Column, not an

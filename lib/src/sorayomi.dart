@@ -14,6 +14,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'constants/app_theme.dart';
 import 'features/auth/presentation/reauth_banner.dart';
+import 'features/manga_book/presentation/reader/widgets/reader_wrapper.dart';
 import 'features/notifications/controller/notifications_controller.dart';
 import 'features/notifications/data/background/notification_worker.dart';
 import 'features/notifications/data/local_notification_service.dart';
@@ -105,6 +106,8 @@ class Sorayomi extends HookConsumerWidget {
     final customSeed = ref.watch(customThemeColorProvider);
     final isTrueBlack = ref.watch(isTrueBlackProvider).ifNull();
     final readerFullscreen = ref.watch(readerFullscreenProvider).ifNull(true);
+    final readerChromeVisible =
+        ref.watch(readerChromeVisibleProvider) ?? false;
     // Idempotent, so re-applying on every rebuild is harmless.
     applyForcePortrait(ref.watch(forcePortraitProvider).ifNull());
     return MaterialApp.router(
@@ -116,6 +119,7 @@ class Sorayomi extends HookConsumerWidget {
               showTitleBar: showDesktopTitleBarForLocation(
                 routes.routeInformationProvider.value.uri,
                 readerFullscreen: readerFullscreen,
+                readerChromeVisible: readerChromeVisible,
               ),
               child: Stack(
                 fit: StackFit.expand,

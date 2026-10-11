@@ -69,6 +69,7 @@ class _WindowButtons extends StatefulWidget {
 
 class _WindowButtonsState extends State<_WindowButtons> with WindowListener {
   bool _maximized = false;
+  bool _fullScreen = false;
 
   @override
   void initState() {
@@ -76,6 +77,9 @@ class _WindowButtonsState extends State<_WindowButtons> with WindowListener {
     windowManager.addListener(this);
     windowManager.isMaximized().then((v) {
       if (mounted) setState(() => _maximized = v);
+    });
+    windowManager.isFullScreen().then((v) {
+      if (mounted) setState(() => _fullScreen = v);
     });
   }
 
@@ -89,6 +93,10 @@ class _WindowButtonsState extends State<_WindowButtons> with WindowListener {
   void onWindowMaximize() => setState(() => _maximized = true);
   @override
   void onWindowUnmaximize() => setState(() => _maximized = false);
+  @override
+  void onWindowEnterFullScreen() => setState(() => _fullScreen = true);
+  @override
+  void onWindowLeaveFullScreen() => setState(() => _fullScreen = false);
 
   @override
   Widget build(BuildContext context) {
@@ -112,6 +120,19 @@ class _WindowButtonsState extends State<_WindowButtons> with WindowListener {
             brightness: b,
             onPressed: () => windowManager.maximize(),
           ),
+        SizedBox(
+          width: 46,
+          height: 32,
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            iconSize: 18,
+            tooltip: _fullScreen ? 'Exit fullscreen' : 'Fullscreen',
+            onPressed: () => windowManager.setFullScreen(!_fullScreen),
+            icon: Icon(
+              _fullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+            ),
+          ),
+        ),
         WindowCaptionButton.close(
           brightness: b,
           onPressed: () => windowManager.close(),

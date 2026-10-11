@@ -65,7 +65,6 @@ jobs:
   flatpak:
     name: Build & sign Flatpak
     needs: build-bundle
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/andyholmes/flatter/freedesktop:24.08
@@ -78,6 +77,7 @@ jobs:
           name: linux-bundle
           path: flatpak/bundle
       - name: Import GPG signing key
+        if: startsWith(github.ref, 'refs/tags/')
         run: echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
       - name: Stamp the app version into the AppStream metainfo
         # The checked-in <releases> list goes stale the moment it's written;
@@ -91,8 +91,9 @@ jobs:
       - uses: andyholmes/flatter@v1.0.0
         with:
           files: flatpak/io.github.aaronbamblett.tsumiru.yml
-          gpg-sign: ${{ secrets.FLATPAK_GPG_KEY_ID }}
-          upload-pages-artifact: true
+          gpg-sign: ${{ startsWith(github.ref, 'refs/tags/') && secrets.FLATPAK_GPG_KEY_ID || '' }}
+          upload-bundles: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          upload-pages-artifact: ${{ startsWith(github.ref, 'refs/tags/') }}
           upload-pages-includes: |
             flatpak/tsumiru-repo.gpg
             flatpak/io.github.aaronbamblett.tsumiru.flatpakref
@@ -101,6 +102,7 @@ jobs:
   deploy:
     name: Deploy Pages
     needs: flatpak
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     environment:
       name: github-pages

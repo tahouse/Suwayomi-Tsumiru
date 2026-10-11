@@ -115,32 +115,40 @@ class Sorayomi extends HookConsumerWidget {
           final toastWrapped = FToastBuilder()(context, child);
           return ListenableBuilder(
             listenable: routes.routeInformationProvider,
-            builder: (context, _) => DesktopWindowScaffold(
-              showTitleBar: showDesktopTitleBarForLocation(
-                routes.routeInformationProvider.value.uri,
-                readerFullscreen: readerFullscreen,
-                readerChromeVisible: readerChromeVisible,
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Offstage(
-                    offstage: sessionChanging,
-                    child: TickerMode(
-                      enabled: !sessionChanging,
-                      child: ReauthBannerHost(
-                        child:
-                            _IncognitoNotificationBridge(child: toastWrapped),
+            builder: (context, _) {
+              final location = routes.routeInformationProvider.value.uri;
+              return DesktopWindowScaffold(
+                showTitleBar: showDesktopTitleBarForLocation(
+                  location,
+                  readerFullscreen: readerFullscreen,
+                  readerChromeVisible: readerChromeVisible,
+                ),
+                overlayTitleBar: overlayDesktopTitleBarForLocation(
+                  location,
+                  readerFullscreen: readerFullscreen,
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Offstage(
+                      offstage: sessionChanging,
+                      child: TickerMode(
+                        enabled: !sessionChanging,
+                        child: ReauthBannerHost(
+                          child: _IncognitoNotificationBridge(
+                            child: toastWrapped,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  if (sessionChanging)
-                    const Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
-                    ),
-                ],
-              ),
-            ),
+                    if (sessionChanging)
+                      const Scaffold(
+                        body: Center(child: CircularProgressIndicator()),
+                      ),
+                  ],
+                ),
+              );
+            },
           );
         },
         onGenerateTitle: (context) => context.l10n.appTitle,

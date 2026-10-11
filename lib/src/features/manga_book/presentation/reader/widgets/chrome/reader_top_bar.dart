@@ -40,9 +40,8 @@ class ReaderTopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Compute the system status-bar inset so the bar sits below it.
-    final view = View.of(context);
-    final systemTopInset = view.viewPadding.top / view.devicePixelRatio;
+    // Includes the desktop title-bar inset injected by DesktopWindowScaffold.
+    final systemTopInset = MediaQuery.viewPaddingOf(context).top;
 
     return Material(
       // Shared chrome surface; the Material fills behind the status bar.

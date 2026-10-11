@@ -32,6 +32,13 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      overlayDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: true,
+      ),
+      isTrue,
+    );
   });
 
   test('reader keeps the desktop title bar when fullscreen is disabled', () {
@@ -45,6 +52,13 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      overlayDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: false,
+      ),
+      isFalse,
+    );
   });
 
   test('similarly named settings route keeps the desktop title bar', () {
@@ -57,6 +71,13 @@ void main() {
         readerChromeVisible: false,
       ),
       isTrue,
+    );
+    expect(
+      overlayDesktopTitleBarForLocation(
+        location,
+        readerFullscreen: true,
+      ),
+      isFalse,
     );
   });
 }

@@ -21,6 +21,7 @@ import 'features/settings/presentation/appearance/widgets/app_theme_selector/app
 import 'features/settings/presentation/appearance/widgets/is_true_black/is_true_black_tile.dart';
 import 'features/settings/presentation/general/widgets/force_portrait_tile.dart';
 import 'features/settings/presentation/incognito/incognito_mode.dart';
+import 'features/settings/presentation/reader/widgets/reader_general_prefs/reader_general_prefs.dart';
 import 'features/settings/widgets/app_theme_mode_tile/app_theme_mode_tile.dart';
 import 'global_providers/global_providers.dart';
 import 'l10n/generated/app_localizations.dart';
@@ -103,29 +104,38 @@ class Sorayomi extends HookConsumerWidget {
     final appTheme = ref.watch(appThemeKeyProvider) ?? AppTheme.indigoNight;
     final customSeed = ref.watch(customThemeColorProvider);
     final isTrueBlack = ref.watch(isTrueBlackProvider).ifNull();
+    final readerFullscreen = ref.watch(readerFullscreenProvider).ifNull(true);
     // Idempotent, so re-applying on every rebuild is harmless.
     applyForcePortrait(ref.watch(forcePortraitProvider).ifNull());
     return MaterialApp.router(
         builder: (context, child) {
           final toastWrapped = FToastBuilder()(context, child);
-          return DesktopWindowScaffold(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Offstage(
-                  offstage: sessionChanging,
-                  child: TickerMode(
-                    enabled: !sessionChanging,
-                    child: ReauthBannerHost(
-                      child: _IncognitoNotificationBridge(child: toastWrapped),
+          return ListenableBuilder(
+            listenable: routes.routeInformationProvider,
+            builder: (context, _) => DesktopWindowScaffold(
+              showTitleBar: showDesktopTitleBarForLocation(
+                routes.routeInformationProvider.value.uri,
+                readerFullscreen: readerFullscreen,
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Offstage(
+                    offstage: sessionChanging,
+                    child: TickerMode(
+                      enabled: !sessionChanging,
+                      child: ReauthBannerHost(
+                        child:
+                            _IncognitoNotificationBridge(child: toastWrapped),
+                      ),
                     ),
                   ),
-                ),
-                if (sessionChanging)
-                  const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  ),
-              ],
+                  if (sessionChanging)
+                    const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    ),
+                ],
+              ),
             ),
           );
         },

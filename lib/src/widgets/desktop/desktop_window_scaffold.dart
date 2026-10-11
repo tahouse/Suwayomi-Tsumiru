@@ -9,16 +9,34 @@ import 'package:flutter/material.dart';
 import '../../utils/platform/platform_runtime.dart';
 import 'desktop_title_bar.dart';
 
+bool showDesktopTitleBarForLocation(
+  Uri location, {
+  required bool readerFullscreen,
+}) {
+  final segments = location.pathSegments;
+  final isReader =
+      segments.length == 4 &&
+      segments[0] == 'manga' &&
+      segments[2] == 'chapter';
+  return !readerFullscreen || !isReader;
+}
+
 /// Wraps the app with the custom title bar on desktop. A Column, not an
 /// overlay Stack — the opaque bar must push content down, never occlude it
 /// (macOS traffic lights float over the bar's left edge).
 class DesktopWindowScaffold extends StatelessWidget {
-  const DesktopWindowScaffold({super.key, required this.child});
+  const DesktopWindowScaffold({
+    super.key,
+    required this.child,
+    this.showTitleBar = true,
+  });
+
   final Widget child;
+  final bool showTitleBar;
 
   @override
   Widget build(BuildContext context) {
-    if (!isDesktopPlatform) return child;
+    if (!isDesktopPlatform || !showTitleBar) return child;
 
     return Column(
       children: [

@@ -106,20 +106,22 @@ class _WindowButtonsState extends State<_WindowButtons> with WindowListener {
       // the right; a default (max-width) Row would left-align them.
       mainAxisSize: MainAxisSize.min,
       children: [
-        WindowCaptionButton.minimize(
-          brightness: b,
-          onPressed: () => windowManager.minimize(),
-        ),
-        if (_maximized)
-          WindowCaptionButton.unmaximize(
+        if (!_fullScreen) ...[
+          WindowCaptionButton.minimize(
             brightness: b,
-            onPressed: () => windowManager.unmaximize(),
-          )
-        else
-          WindowCaptionButton.maximize(
-            brightness: b,
-            onPressed: () => windowManager.maximize(),
+            onPressed: () => windowManager.minimize(),
           ),
+          if (_maximized)
+            WindowCaptionButton.unmaximize(
+              brightness: b,
+              onPressed: () => windowManager.unmaximize(),
+            )
+          else
+            WindowCaptionButton.maximize(
+              brightness: b,
+              onPressed: () => windowManager.maximize(),
+            ),
+        ],
         SizedBox(
           width: 46,
           height: 32,

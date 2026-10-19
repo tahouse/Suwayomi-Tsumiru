@@ -1,9 +1,10 @@
 # Multi-platform release builder for Aaron's fork.
 #
-# Triggered by pushing a v*.*.* tag (or manually). Builds Android, iOS, Linux,
-# Windows, macOS and Web from the tagged commit and attaches the artifacts to
-# the GitHub release. Distinct from the inherited upstream `publish.yml`
-# (which targets winget/homebrew/Play Store and uses unpinned Flutter).
+# Main pushes, manual runs and the weekly schedule retain downloadable Actions
+# artifacts. A v*.*.* tag also attaches them to the GitHub release. Builds
+# Android, iOS, Linux, Windows, macOS and Web. Distinct from the inherited
+# upstream `publish.yml` (which targets winget/homebrew/Play Store and uses
+# unpinned Flutter).
 #
 # Release stays a DRAFT until complete: every platform attaches its artifact to
 # a draft release, and the separate `publish` job flips it to published only
@@ -32,6 +33,8 @@ on:
   schedule:
     - cron: '0 6 * * 1'
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
 

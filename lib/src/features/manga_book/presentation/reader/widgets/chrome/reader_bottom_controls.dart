@@ -12,6 +12,7 @@ import '../../../../../../constants/app_sizes.dart';
 import '../../../../../../constants/enum.dart';
 import '../../../../../../routes/router_config.dart';
 import '../../../../../../utils/extensions/custom_extensions.dart';
+import '../../../../../../utils/motion/reduce_motion.dart';
 import '../../../../../../utils/theme/brand.dart';
 import '../../../../../offline/presentation/offline_save_button.dart';
 import '../../../../../settings/presentation/reader/widgets/reader_paged_prefs/reader_paged_prefs.dart';
@@ -83,8 +84,7 @@ class ReaderBottomControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final view = View.of(context);
-    final systemBottomInset = view.viewPadding.bottom / view.devicePixelRatio;
+    final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final isPagedMode = isPagedReaderMode(resolvedReaderMode);
     final chapterButtons = chapterNavCallbacks(
       isRtl: isRTLReaderMode(resolvedReaderMode),
@@ -298,6 +298,7 @@ Future<void> _showChapterPicker({
         },
       );
     },
+    sheetAnimationStyle: context.motionStyle,
   );
 }
 

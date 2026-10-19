@@ -27,6 +27,7 @@ import '../global_providers/global_providers.dart';
 import '../utils/extensions/custom_extensions.dart';
 import '../utils/hooks/debounced_hook.dart';
 import '../utils/misc/app_utils.dart';
+import '../utils/motion/reduce_motion.dart';
 import 'cover_cache/cover_cache.dart';
 import 'custom_circular_progress_indicator.dart';
 
@@ -92,12 +93,57 @@ String serverFileUrl({
   return '$root/$relative';
 }
 
-/// Appends the ui_login access token to [url] as a query parameter.
-///
-/// `cached_network_image` cannot reliably inject an `Authorization` header
-/// across platforms, and the server accepts `?token=` as a fallback. The
-/// delimiter comes from the parsed URI, since page URLs can already carry a
-/// query string.
+/// Whether image requests carry the ui_login token in their URL rather than
+/// in an `Authorization` header. Only on the web, where this hasn't been
+/// verified against a cross-origin server (the header makes the browser send
+/// a CORS preflight). Elsewhere a URL token ends up in reverse-proxy access
+/// logs and in the image cache's URL bookkeeping, a header doesn't.
+const bool kImageTokenInUrl = kIsWeb;
+
+/// [headers] with the ui_login `Authorization` header added, unless the token
+/// rides the URL on this platform (see [kImageTokenInUrl]).
+Map<String, String>? withUiLoginImageAuth(
+  Map<String, String>? headers,
+  String? token,
+) {
+  if (kImageTokenInUrl || token == null || token.isEmpty) return headers;
+  return {...?headers, 'Authorization': 'Bearer $token'};
+}
+
+/// [url] with the ui_login token appended when it rides the URL on this
+/// platform (see [kImageTokenInUrl]).
+String uiLoginImageUrl(String url, String? token) =>
+    kImageTokenInUrl ? appendUiLoginToken(url, token) : url;
+
+/// [fetchUrl] as an external browser can open it. A browser can't be handed a
+/// header, so a ui_login token has to ride the URL: the one place the app
+/// still puts it there off the web. It stays in the browser's history, valid
+/// for the access token's lifetime (5 minutes by default).
+String serverImageBrowserUrl(WidgetRef ref, String fetchUrl) {
+  if (kImageTokenInUrl ||
+      ref.read(authTypeKeyProvider) != AuthType.uiLogin) {
+    return fetchUrl;
+  }
+  return appendUiLoginTokenToWebUrl(
+    fetchUrl,
+    ref.read(authCredentialsStoreProvider).value?.uiAccessToken,
+  );
+}
+
+/// [appendUiLoginToken] for web addresses only: a local `file:` page would
+/// hand the token to the OS opener.
+String appendUiLoginTokenToWebUrl(String url, String? token) {
+  final scheme = Uri.tryParse(url)?.scheme;
+  return scheme == 'http' || scheme == 'https'
+      ? appendUiLoginToken(url, token)
+      : url;
+}
+
+/// Appends the ui_login access token to [url] as a query parameter, which the
+/// server accepts as a fallback for clients that can't send a header: the web
+/// build's images, and a page opened in an external browser. The delimiter
+/// comes from the parsed URI, since page URLs can already carry a query
+/// string.
 String appendUiLoginToken(String url, String? token) {
   if (url.isEmpty || token == null || token.isEmpty) return url;
   final hasQuery = Uri.tryParse(url)?.hasQuery ?? url.contains('?');
@@ -328,10 +374,9 @@ class ServerImage extends HookConsumerWidget {
       );
     }
 
-    final fetchUrl = appendUiLoginToken(
-      baseApi,
-      authType == AuthType.uiLogin ? uiAccessTokenSnapshot : null,
-    );
+    final uiToken = authType == AuthType.uiLogin ? uiAccessTokenSnapshot : null;
+    httpHeaders = withUiLoginImageAuth(httpHeaders, uiToken);
+    final fetchUrl = uiLoginImageUrl(baseApi, uiToken);
 
     // Native covers use durable storage separate from the page cache.
     // Web covers and pages share the credential-aware memory cache.
@@ -391,6 +436,7 @@ class ServerImage extends HookConsumerWidget {
                                 gqlClient: ref.read(
                                   unauthenticatedGraphQlClientProvider,
                                 ),
+                                trigger: 'image-reload',
                               );
                         },
                       );
@@ -436,6 +482,9 @@ class ServerImage extends HookConsumerWidget {
         : (BuildContext ctx, ImageProvider provider) =>
               imageBuilder!(ctx, _capDecode(provider, cacheWidth, cacheHeight));
 
+    final fadeDuration = context.reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 150);
     return CachedNetworkImage(
       key: key.value,
       imageUrl: fetchUrl,
@@ -446,9 +495,9 @@ class ServerImage extends HookConsumerWidget {
       width: size?.width,
       fit: fit ?? BoxFit.cover,
       // Package defaults linger the placeholder a full second after the image
-      // is ready.
-      fadeOutDuration: const Duration(milliseconds: 150),
-      fadeInDuration: const Duration(milliseconds: 150),
+      // is ready. Zero shows the image at once (octo_image completes it inline).
+      fadeOutDuration: fadeDuration,
+      fadeInDuration: fadeDuration,
       memCacheWidth: imageBuilder == null ? cacheWidth : null,
       memCacheHeight: imageBuilder == null ? cacheHeight : null,
       imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet,
@@ -551,10 +600,9 @@ serverImageRequest(
     );
   }
 
-  final fetchUrl = appendUiLoginToken(
-    rawUrl,
-    authType == AuthType.uiLogin ? creds?.uiAccessToken : null,
-  );
+  final uiToken = authType == AuthType.uiLogin ? creds?.uiAccessToken : null;
+  headers = withUiLoginImageAuth(headers, uiToken);
+  final fetchUrl = uiLoginImageUrl(rawUrl, uiToken);
   final cacheKey = accountImageCacheKey(
     rawUrl,
     authType: authType,

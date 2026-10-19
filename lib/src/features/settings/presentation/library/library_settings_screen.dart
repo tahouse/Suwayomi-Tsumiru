@@ -13,13 +13,13 @@ import '../../../../utils/extensions/custom_extensions.dart';
 
 import '../../../../utils/misc/app_utils.dart';
 import '../../../../utils/misc/toast/toast.dart';
+import '../../../../utils/motion/reduce_motion.dart';
 import '../../../../widgets/emoticons.dart';
 import '../../../../widgets/input_popup/domain/settings_prop_type.dart';
 import '../../../../widgets/input_popup/settings_prop_tile.dart';
 import '../../../../widgets/popup_widgets/radio_list_popup.dart';
 import '../../../../widgets/section_title.dart';
 import '../../../account/data/account_providers.dart';
-import '../../../account/domain/account_access.dart';
 import '../../../library/data/default_category.dart';
 import '../../../library/domain/category/category_model.dart';
 import '../../../library/presentation/category/controller/edit_category_controller.dart';
@@ -44,11 +44,8 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final personalSettings = ref.watch(personalSettingsProvider);
     final access = ref.watch(settledAccountAccessProvider);
     final canManage = access.allows(Enum$UserPermission.MANAGE_SETTINGS);
-    final canEditPersonal =
-        access.capability != AccountCapability.unknown &&
-        !personalSettings.isLoading &&
-        !personalSettings.hasError &&
-        personalSettings.value != null;
+    final personalState = ref.watch(personalSettingsStateProvider);
+    final canEditPersonal = personalState == PersonalSettingsState.ready;
     final categories =
         ref.watch(categoryControllerProvider).value ?? const <CategoryDto>[];
 
@@ -148,6 +145,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
                               Navigator.pop(context);
                             },
                           ),
+                          animationStyle: context.motionStyle,
                         ),
                 ),
                 // HideEmptyCategoryTile(),
@@ -192,9 +190,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
                 SettingsPropTile(
                   title: context.l10n.automaticallyRefreshMetadata,
                   trailing: const Icon(Icons.now_wallpaper_rounded),
-                  subtitle: canEditPersonal
-                      ? context.l10n.automaticallyRefreshMetadataSubtitle
-                      : context.l10n.accountSettingsUnavailable,
+                  subtitle: personalState == PersonalSettingsState.unavailable
+                      ? context.l10n.accountSettingsUnavailable
+                      : context.l10n.automaticallyRefreshMetadataSubtitle,
                   type: SettingsPropType.switchTile(
                     value: librarySettingsDto.updateMangas,
                     onChanged: !canEditPersonal
@@ -225,6 +223,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
                           context: context,
                           builder: (context) =>
                               const SkipUpdatingEntriesPopup(),
+                          animationStyle: context.motionStyle,
                         ),
                 ),
                 ListTile(
@@ -235,6 +234,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
                   onTap: () => showDialog<void>(
                     context: context,
                     builder: (_) => const UpdateCategoriesDialog(),
+                    animationStyle: context.motionStyle,
                   ),
                 ),
                 ListTile(

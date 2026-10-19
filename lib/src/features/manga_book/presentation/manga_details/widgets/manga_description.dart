@@ -18,6 +18,7 @@ import '../../../../../routes/navigation.dart';
 import '../../../../../utils/extensions/custom_extensions.dart';
 import '../../../../../utils/launch_url_in_web.dart';
 import '../../../../../utils/misc/toast/toast.dart';
+import '../../../../../utils/motion/reduce_motion.dart';
 import '../../../../../utils/theme/brand.dart';
 import '../../../../../widgets/manga_cover/list/manga_cover_descriptive_list_tile.dart';
 import '../../../../../widgets/server_image.dart';
@@ -81,6 +82,7 @@ class MangaDescription extends HookConsumerWidget {
           ],
         ),
       ),
+      sheetAnimationStyle: context.motionStyle,
     );
   }
 
@@ -116,6 +118,7 @@ class MangaDescription extends HookConsumerWidget {
                   ),
                 ],
               ),
+              animationStyle: context.motionStyle,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -274,7 +277,7 @@ class MangaDescription extends HookConsumerWidget {
                   ),
                   Expanded(
                     child: MangaActionButton(
-                      active: manga.trackRecords.totalCount > 0,
+                      active: manga.trackRecords.nodes.isNotEmpty,
                       icon: const Icon(Icons.sync_rounded),
                       label: context.l10n.tracking,
                       onPressed: () => showTrackSheet(

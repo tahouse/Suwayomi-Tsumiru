@@ -17,6 +17,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'src/constants/brand_icons.dart';
 import 'src/constants/enum.dart';
 import 'src/constants/timeout_constants.dart';
 import 'src/features/about/presentation/about/controllers/about_controller.dart';
@@ -35,6 +36,7 @@ import 'src/features/notifications/data/background/notification_background_entry
 import 'src/features/offline/data/account_storage_recovery_state.dart';
 import 'src/features/offline/data/background/background_download_controller_shim.dart';
 import 'src/features/offline/data/background/catchup_work_spec.dart';
+import 'src/features/offline/data/background/record_seal.dart';
 import 'src/features/offline/data/offline_background_downloads.dart';
 import 'src/features/offline/data/offline_download_coordinator.dart';
 import 'src/features/offline/data/offline_repository.dart';
@@ -51,6 +53,7 @@ import 'src/global_providers/global_providers.dart';
 import 'src/sorayomi.dart';
 import 'src/utils/crash/crash_log.dart';
 import 'src/utils/crash/diagnostics.dart';
+import 'src/utils/crash/provider_failure_logger.dart';
 import 'src/utils/crash/redact_tokens.dart';
 import 'src/utils/desktop/desktop_window.dart';
 import 'src/utils/hive/graphql_cache_guard.dart';
@@ -97,6 +100,7 @@ Future<void> _startApp() async {
   // 100 MB default is too small even for tile-sized covers — evicted covers
   // re-shimmer on every tab switch. A cap, not an allocation.
   PaintingBinding.instance.imageCache.maximumSizeBytes = 256 << 20;
+  registerBrandIconsLicense();
   await _setUpCrashReporting();
   // Initialise the foreground-task plugin (Android-only; no-op elsewhere) before
   // any download service is started. Must run after the binding is ready.
@@ -129,6 +133,12 @@ Future<void> _startApp() async {
   final container = _createSessionContainer(packageInfo, sharedPreferences);
 
   final secure = container.read(secureStorageProvider);
+
+  // Before anything reads or writes the background workers' credential
+  // records, whose secrets are sealed with this key.
+  if (!await RecordSeal.load(secure, create: true)) {
+    _logBoot('background credentials key unavailable');
+  }
 
   // 1) Migrate legacy SharedPreferences basic-auth → secure storage.
   try {
@@ -397,6 +407,7 @@ ProviderContainer _createSessionContainer(
   SharedPreferences preferences, {
   CacheManager? coverCache,
 }) => ProviderContainer(
+  observers: [ProviderFailureLogger()],
   retry: (retryCount, error) => isConnectionError(error)
       ? null
       : ProviderContainer.defaultRetry(retryCount, error),

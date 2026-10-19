@@ -12,6 +12,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../../constants/app_sizes.dart';
 import '../../../../../routes/router_config.dart';
 import '../../../../../utils/extensions/custom_extensions.dart';
+import '../../../../../utils/motion/reduce_motion.dart';
 import '../../../../../widgets/custom_circular_progress_indicator.dart';
 import '../../../../../widgets/emoticons.dart';
 import '../../../../../widgets/manga_cover/list/manga_cover_list_tile.dart';
@@ -35,62 +36,74 @@ class SourceMangaListView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PagedListView(
-      pagingController: controller,
-      builderDelegate: PagedChildBuilderDelegate<MangaDto>(
-        firstPageProgressIndicatorBuilder: (context) =>
-            const CenterSorayomiShimmerIndicator(),
-        newPageProgressIndicatorBuilder: (context) => Row(
-          children: [
-            SizedBox(
-              height: 80,
-              width: 80,
-              child: ClipRRect(
-                borderRadius: KBorderRadius.r8.radius,
-                child: const SorayomiShimmerIndicator(),
-              ),
-            ),
-            Padding(
-              padding: KEdgeInsets.h8.size,
-              child: Shimmer.fromColors(
-                baseColor: context.colorScheme.surface,
-                highlightColor: context.theme.colorScheme.primary,
-                child: Container(
-                  width: context.width * .3,
-                  decoration: BoxDecoration(
-                    borderRadius: KBorderRadius.r8.radius,
-                    color: context.colorScheme.surfaceContainerHighest,
-                  ),
-                  height: 12,
+    return PagingListener(
+      controller: controller,
+      builder: (context, state, fetchNextPage) => PagedListView(
+        state: state,
+        fetchNextPage: fetchNextPage,
+        builderDelegate: PagedChildBuilderDelegate<MangaDto>(
+          firstPageProgressIndicatorBuilder: (context) =>
+              const CenterSorayomiShimmerIndicator(),
+          newPageProgressIndicatorBuilder: (context) => Row(
+            children: [
+              SizedBox(
+                height: 80,
+                width: 80,
+                child: ClipRRect(
+                  borderRadius: KBorderRadius.r8.radius,
+                  child: const SorayomiShimmerIndicator(),
                 ),
               ),
+              Padding(
+                padding: KEdgeInsets.h8.size,
+                child: context.reduceMotion
+                    ? Container(
+                        width: context.width * .3,
+                        decoration: BoxDecoration(
+                          borderRadius: KBorderRadius.r8.radius,
+                          color: context.colorScheme.surfaceContainerHighest,
+                        ),
+                        height: 12,
+                      )
+                    : Shimmer.fromColors(
+                        baseColor: context.colorScheme.surface,
+                        highlightColor: context.theme.colorScheme.primary,
+                        child: Container(
+                          width: context.width * .3,
+                          decoration: BoxDecoration(
+                            borderRadius: KBorderRadius.r8.radius,
+                            color: context.colorScheme.surfaceContainerHighest,
+                          ),
+                          height: 12,
+                        ),
+                      ),
+              ),
+              const Spacer(),
+            ],
+          ),
+          firstPageErrorIndicatorBuilder: (context) => Emoticons(
+            title: state.error.toString(),
+            button: TextButton(
+              onPressed: () => controller.refresh(),
+              child: Text(context.l10n.retry),
             ),
-            const Spacer()
-          ],
-        ),
-        firstPageErrorIndicatorBuilder: (context) => Emoticons(
-          title: controller.error.toString(),
-          button: TextButton(
-            onPressed: () => controller.refresh(),
-            child: Text(context.l10n.retry),
+          ),
+          noItemsFoundIndicatorBuilder: (context) => Emoticons(
+            title: context.l10n.noMangaFound,
+            button: TextButton(
+              onPressed: () => controller.refresh(),
+              child: Text(context.l10n.refresh),
+            ),
+          ),
+          itemBuilder: (context, item, index) => MangaCoverListTile(
+            manga: item,
+            selected: selectedIds.contains(item.id),
+            onLongPress: () => onToggleSelection(item.id),
+            onPressed: () => selecting
+                ? onToggleSelection(item.id)
+                : MangaRoute(mangaId: item.id).push(context),
           ),
         ),
-        noItemsFoundIndicatorBuilder: (context) => Emoticons(
-          title: context.l10n.noMangaFound,
-          button: TextButton(
-            onPressed: () => controller.refresh(),
-            child: Text(context.l10n.refresh),
-          ),
-        ),
-        itemBuilder: (context, item, index) => MangaCoverListTile(
-          manga: item,
-          selected: selectedIds.contains(item.id),
-          onLongPress: () => onToggleSelection(item.id),
-          onPressed: () => selecting
-              ? onToggleSelection(item.id)
-              : MangaRoute(mangaId: item.id).push(context),
-        ),
-
       ),
     );
   }

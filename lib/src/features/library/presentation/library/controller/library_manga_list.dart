@@ -12,6 +12,10 @@ import '../../../../../features/offline/data/offline_cover_warmer.dart';
 import '../../../../../features/offline/data/offline_read_fallback.dart';
 import '../../../../../features/offline/data/offline_repository.dart';
 import '../../../../../features/offline/data/server_reachability.dart';
+import '../../../../../utils/crash/diagnostics.dart';
+import '../../../../../utils/crash/redact_tokens.dart';
+import '../../../../../utils/extensions/custom_extensions.dart';
+import '../../../../../widgets/manga_cover/providers/manga_cover_providers.dart';
 import '../../../../auth/data/auth_credentials_store.dart';
 import '../../../../manga_book/domain/manga/manga_model.dart';
 import '../../../data/category_repository.dart';
@@ -25,6 +29,11 @@ Future<List<MangaDto>?> libraryMangaList(Ref ref) async {
   if (!current()) return null;
   final offlineDb = ref.watch(offlineReadDatabaseProvider);
   final categoryRepository = ref.watch(categoryRepositoryProvider);
+  // The first unread chapter only feeds the "continue reading" button, off by
+  // default; turning it on refetches the list with it.
+  final withFirstUnread = ref
+      .watch(showContinueReadingButtonProvider)
+      .ifNull(false);
   // Captured before the await; touching ref after the async gap throws if this
   // provider was disposed mid-build. The keepAlive notifiers outlive it.
   final reachability = ref.read(serverUnreachableProvider.notifier);
@@ -36,30 +45,54 @@ Future<List<MangaDto>?> libraryMangaList(Ref ref) async {
   // they already carry the unread correction (double-applied if written
   // back), and the DTO round-trip loses lastReadAt and real chapter numbers.
   var fromServer = false;
-  final list = await libraryWithOfflineFallback(
-    fetch: () async {
-      final r = await categoryRepository.getAllLibraryMangas();
-      fromServer = true;
-      return r;
-    },
-    // Only read the native-only DB when offline is available (never on web).
-    db: offlineDb,
-    offlineEnabled: offlineDb != null,
-    offlineFirst:
-        ref.watch(viewOfflineNowProvider) ||
-        ref.watch(serverUnreachableProvider),
-    // Riverpod forbids modifying another provider while this one is building,
-    // so defer the flip to a later tick (past the build) and ignore it if the
-    // container is already gone.
-    onReachability: (reachable) {
-      Future(() {
-        try {
-          if (current()) reachability.set(!reachable);
-        } catch (_) {}
-      });
-    },
-  );
+  final offlineFirst =
+      ref.watch(viewOfflineNowProvider) || ref.watch(serverUnreachableProvider);
+  final List<MangaDto>? list;
+  try {
+    list = await libraryWithOfflineFallback(
+      fetch: () async {
+        final r = await categoryRepository.getAllLibraryMangas(
+          withFirstUnread: withFirstUnread,
+        );
+        fromServer = true;
+        return r;
+      },
+      // Only read the native-only DB when offline is available (never on web).
+      db: offlineDb,
+      offlineEnabled: offlineDb != null,
+      offlineFirst: offlineFirst,
+      // Riverpod forbids modifying another provider while this one is building,
+      // so defer the flip to a later tick (past the build) and ignore it if the
+      // container is already gone.
+      onReachability: (reachable) {
+        Future(() {
+          try {
+            if (current()) {
+              reachability.set(!reachable, reason: 'library-fetch');
+            }
+          } catch (_) {}
+        });
+      },
+    );
+  } catch (e) {
+    // Connection errors never reach the provider-failure log, and this is the
+    // list every library tab filters.
+    recordDiagnostic(
+      redactTokens(
+        '[${DateTime.now().toIso8601String()}] library-list: failed '
+        'offlineFirst=$offlineFirst error=${e.runtimeType}: $e\n',
+      ),
+    );
+    rethrow;
+  }
   if (!current()) return null;
+  // Which list the library shows, each time it's rebuilt: the server's or the
+  // on-device catalog (downloaded series only).
+  recordDiagnostic(
+    '[${DateTime.now().toIso8601String()}] library-list: '
+    'source=${fromServer ? 'server' : 'catalog'} manga=${list?.length} '
+    'offlineFirst=$offlineFirst\n',
+  );
   if (list != null && fromServer) {
     if (sync != null) {
       for (final manga in list) {

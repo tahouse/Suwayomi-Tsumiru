@@ -30,6 +30,16 @@ import '../../../helpers/fake_page_store.dart';
 import '../../../helpers/offline_test_db.dart';
 import 'account_providers_test.dart' show FakeAccountRepository;
 
+final _offlineProvider = NotifierProvider<_OfflineToggle, bool>(
+  _OfflineToggle.new,
+);
+
+class _OfflineToggle extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void set(bool active) => state = active;
+}
+
 final _accessProvider = NotifierProvider<_Access, AccountAccess>(_Access.new);
 
 class _Access extends Notifier<AccountAccess> {
@@ -133,7 +143,9 @@ void main() {
         serverEndpointResolverProvider.overrideWith(StartupEndpoint.new),
         currentServerAddressProvider.overrideWithValue('http://server'),
         verifiedServerInstanceIdProvider.overrideWith((ref) => verify()),
-        offlineActiveProvider.overrideWithValue(false),
+        offlineActiveProvider.overrideWith(
+          (ref) => ref.watch(_offlineProvider),
+        ),
         notificationsControllerProvider.overrideWith(
           (ref) => StartupNotifications(ref, notify),
         ),
@@ -177,6 +189,64 @@ void main() {
       expect(refreshes, 0);
       expect(repository.probes, 0);
       expect(repository.currentCalls, 0);
+    },
+  );
+
+  test('changing the LAN address re-syncs notifications', () async {
+    var notifications = 0;
+    final container = await setup(
+      verify: () async => 'A',
+      notify: () async {
+        notifications++;
+      },
+    );
+    final startup = AccountSessionStartup(container);
+    addTearDown(startup.dispose);
+    await startup.start();
+    final atLaunch = notifications;
+    container
+        .read(serverLanUrlProvider.notifier)
+        .update('http://192.168.5.5:4567');
+    await Future<void>.delayed(Duration.zero);
+    expect(notifications, atLaunch + 1);
+  });
+
+  test(
+    'address changes during an identity change re-sync once it settles',
+    () async {
+      var notifications = 0;
+      final resynced = Completer<void>();
+      final container = await setup(
+        verify: () async => 'A',
+        notify: () async {
+          if (++notifications == 2) resynced.complete();
+        },
+      );
+      final startup = AccountSessionStartup(container);
+      addTearDown(startup.dispose);
+      await startup.start();
+      expect(notifications, 1);
+      final gate = Completer<void>();
+      final change = container
+          .read(authCredentialsStoreProvider.notifier)
+          .withIdentityChange(() => gate.future, preserveSession: true);
+      expect(
+        container.read(authCredentialsStoreProvider.notifier).identityChanging,
+        isTrue,
+      );
+      container
+          .read(serverLanUrlProvider.notifier)
+          .update('http://192.168.5.5:4567');
+      container
+          .read(serverLanUrlProvider.notifier)
+          .update('http://192.168.5.6:4567');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(notifications, 1);
+      gate.complete();
+      await change;
+      await resynced.future;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(notifications, 2);
     },
   );
 
@@ -381,5 +451,53 @@ void main() {
     addTearDown(startup.dispose);
     await startup.start();
     await coordinator.pumped.future.timeout(const Duration(seconds: 2));
+  });
+
+  test(
+    'offline turning on during the launch pass it is read by runs no second pass',
+    () async {
+      // At launch offline turns on as soon as the server identity loads,
+      // while the pass that awaited it is still running and about to read it.
+      var verifications = 0;
+      late ProviderContainer container;
+      container = await setup(
+        verify: () async {
+          verifications++;
+          return 'catalog-a';
+        },
+        notify: () async {
+          container.read(_offlineProvider.notifier).set(true);
+          container.read(offlineActiveProvider);
+          await pumpEventQueue();
+          // Off again before the pass reads it, so the test stays out of the
+          // offline launch path; what's checked is only whether it reruns.
+          container.read(_offlineProvider.notifier).set(false);
+          container.read(offlineActiveProvider);
+        },
+      );
+      final startup = AccountSessionStartup(container);
+      addTearDown(startup.dispose);
+      await startup.start();
+      await pumpEventQueue();
+      expect(verifications, 1);
+    },
+  );
+
+  test('offline turning on between passes still starts one', () async {
+    var verifications = 0;
+    final container = await setup(
+      verify: () async {
+        verifications++;
+        return 'catalog-a';
+      },
+      notify: () async {},
+    );
+    final startup = AccountSessionStartup(container);
+    addTearDown(startup.dispose);
+    await startup.start();
+    expect(verifications, 1);
+    container.read(_offlineProvider.notifier).set(true);
+    await pumpEventQueue();
+    expect(verifications, 2);
   });
 }

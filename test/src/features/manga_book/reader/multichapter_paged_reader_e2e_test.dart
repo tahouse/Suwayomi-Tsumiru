@@ -13,6 +13,7 @@ import 'package:graphql/client.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tsumiru/src/constants/enum.dart';
+import 'package:tsumiru/src/constants/reader_keyboard_shortcuts.dart';
 import 'package:tsumiru/src/features/manga_book/data/manga_book/manga_book_repository.dart';
 import 'package:tsumiru/src/features/manga_book/domain/chapter/chapter_model.dart';
 import 'package:tsumiru/src/features/manga_book/domain/chapter/graphql/__generated__/fragment.graphql.dart';
@@ -21,14 +22,19 @@ import 'package:tsumiru/src/features/manga_book/domain/chapter_page/chapter_page
 import 'package:tsumiru/src/features/manga_book/domain/manga/graphql/__generated__/fragment.graphql.dart';
 import 'package:tsumiru/src/features/manga_book/domain/manga/manga_model.dart';
 import 'package:tsumiru/src/features/manga_book/presentation/manga_details/controller/manga_details_controller.dart';
+import 'package:tsumiru/src/features/manga_book/presentation/reader/controller/auto_scroll_controller.dart';
 import 'package:tsumiru/src/features/manga_book/presentation/reader/controller/reader_controller.dart';
 import 'package:tsumiru/src/features/manga_book/presentation/reader/reader_screen.dart';
+import 'package:tsumiru/src/features/manga_book/presentation/reader/widgets/reader_chapter_gap_warning.dart';
+import 'package:tsumiru/src/features/manga_book/presentation/reader/widgets/reader_mode/multichapter_paged_reader_mode.dart';
 import 'package:tsumiru/src/features/manga_book/presentation/reader/widgets/reader_mode/paged_reader_viewport.dart';
+import 'package:tsumiru/src/features/manga_book/presentation/reader/widgets/reader_wrapper.dart';
 import 'package:tsumiru/src/features/tracking/data/tracker_repository.dart';
 import 'package:tsumiru/src/features/tracking/domain/tracking_settings_providers.dart';
 import 'package:tsumiru/src/global_providers/global_providers.dart';
 import 'package:tsumiru/src/graphql/__generated__/schema.graphql.dart';
 import 'package:tsumiru/src/l10n/generated/app_localizations.dart';
+import 'package:tsumiru/src/utils/motion/reduce_motion.dart';
 
 const _png1x1 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
@@ -54,6 +60,13 @@ class _FixedToggle extends UpdateProgressAfterReading {
   final bool _value;
   @override
   bool? build() => _value;
+}
+
+class _FixedReduceMotion extends AppReduceMotion {
+  _FixedReduceMotion(this._value);
+  final bool _value;
+  @override
+  bool build() => _value;
 }
 
 class _RecordingRepo extends Fake implements MangaBookRepository {
@@ -98,7 +111,7 @@ MangaDto _manga() => Fragment$MangaDto(
   sourceId: '1',
   status: Enum$MangaStatus.ONGOING,
   categories: Fragment$MangaDto$categories(nodes: const []),
-  trackRecords: Fragment$MangaDto$trackRecords(totalCount: 0, nodes: const []),
+  trackRecords: Fragment$MangaDto$trackRecords(nodes: const []),
   unreadCount: 2,
   updateStrategy: Enum$UpdateStrategy.ALWAYS_UPDATE,
   url: '/manga/1',
@@ -132,113 +145,136 @@ ChapterPagesDto _pages(int id, int count) => ChapterPagesDto(
 );
 
 void main() {
-  testWidgets('paged reader loads and crosses into the next chapter in-place', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+  for (final nextNumber in [2, 5]) {
+    testWidgets('paged reader crosses into chapter $nextNumber in-place', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
 
-    SharedPreferences.setMockInitialValues(const {});
-    final prefs = await SharedPreferences.getInstance();
-    final repo = _RecordingRepo();
+      SharedPreferences.setMockInitialValues(const {
+        'alwaysShowChapterTransition': false,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = _RecordingRepo();
 
-    final ch1 = _chapter(id: 1, sourceOrder: 1, pageCount: 3);
-    final ch2 = _chapter(id: 2, sourceOrder: 2, pageCount: 2);
+      final ch1 = _chapter(id: 1, sourceOrder: 1, pageCount: 3);
+      final ch2 = _chapter(id: 2, sourceOrder: nextNumber, pageCount: 2);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sharedPreferencesProvider.overrideWithValue(prefs),
-          mangaBookRepositoryProvider.overrideWithValue(repo),
-          mangaWithIdProvider(
-            mangaId: 1,
-          ).overrideWith(() => _FakeMangaWithId(_manga())),
-          chapterProvider(chapterId: 1).overrideWith((ref) => ch1),
-          chapterProvider(chapterId: 2).overrideWith((ref) => ch2),
-          chapterPagesProvider(
-            chapterId: 1,
-          ).overrideWith((ref) => _pages(1, 3)),
-          chapterPagesProvider(
-            chapterId: 2,
-          ).overrideWith((ref) => _pages(2, 2)),
-          // Chapter 1 has a next (chapter 2); chapter 2 has a previous (1).
-          getNextAndPreviousChaptersProvider(
-            mangaId: 1,
-            chapterId: 1,
-            readerScanlatorGroup: '',
-          ).overrideWithValue((first: ch2, second: null)),
-          getNextAndPreviousChaptersProvider(
-            mangaId: 1,
-            chapterId: 2,
-            readerScanlatorGroup: '',
-          ).overrideWithValue((first: null, second: ch1)),
-          // Keep the external tracker path inert in the test.
-          trackerRepositoryProvider.overrideWithValue(_FakeTrackerRepository()),
-          updateProgressAfterReadingProvider.overrideWith(
-            () => _FixedToggle(false),
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            mangaBookRepositoryProvider.overrideWithValue(repo),
+            mangaWithIdProvider(
+              mangaId: 1,
+            ).overrideWith(() => _FakeMangaWithId(_manga())),
+            chapterProvider(chapterId: 1).overrideWith((ref) => ch1),
+            chapterProvider(chapterId: 2).overrideWith((ref) => ch2),
+            chapterPagesProvider(
+              chapterId: 1,
+            ).overrideWith((ref) => _pages(1, 3)),
+            chapterPagesProvider(
+              chapterId: 2,
+            ).overrideWith((ref) => _pages(2, 2)),
+            // Chapter 1 has a next (chapter 2); chapter 2 has a previous (1).
+            getNextAndPreviousChaptersProvider(
+              mangaId: 1,
+              chapterId: 1,
+              readerScanlatorGroup: '',
+            ).overrideWithValue((first: ch2, second: null)),
+            getNextAndPreviousChaptersProvider(
+              mangaId: 1,
+              chapterId: 2,
+              readerScanlatorGroup: '',
+            ).overrideWithValue((first: null, second: ch1)),
+            // Keep the external tracker path inert in the test.
+            trackerRepositoryProvider.overrideWithValue(
+              _FakeTrackerRepository(),
+            ),
+            updateProgressAfterReadingProvider.overrideWith(
+              () => _FixedToggle(false),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const ReaderScreen(mangaId: 1, chapterId: 1),
           ),
-        ],
-        child: MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: const ReaderScreen(mangaId: 1, chapterId: 1),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Opens on chapter 1 (3 pages).
-    expect(find.text('1 / 3'), findsOneWidget);
-
-    // Read forward through chapter 1. The host preloads chapter 2 near the edge,
-    // commits the window swap on idle, and paging flows straight into it.
-    for (var i = 0; i < 6; i++) {
-      await tester.timedDrag(
-        find.byType(PagedReaderViewport),
-        const Offset(-400, 0),
-        const Duration(milliseconds: 80),
       );
       await tester.pumpAndSettle();
-      // Let the async chapter load + idle-gated commit settle.
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.pumpAndSettle();
-    }
 
-    expect(tester.takeException(), isNull);
+      // Opens on chapter 1 (3 pages).
+      expect(find.text('1 / 3'), findsOneWidget);
 
-    // We must have crossed into chapter 2 — its page count (2) now drives the
-    // seekbar, which never shows "/ 2" while reading the 3-page chapter 1.
-    expect(
-      find.textContaining('/ 2'),
-      findsOneWidget,
-      reason: 'reader never crossed into chapter 2',
-    );
+      // Read forward through chapter 1. The host preloads chapter 2 near the edge,
+      // commits the window swap on idle, and paging flows straight into it.
+      var sawGapWarning = false;
+      for (var i = 0; i < 6; i++) {
+        await tester.timedDrag(
+          find.byType(PagedReaderViewport),
+          const Offset(-400, 0),
+          const Duration(milliseconds: 80),
+        );
+        await tester.pumpAndSettle();
+        // Let the async chapter load + idle-gated commit settle.
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
+        sawGapWarning |= find
+            .byType(ReaderChapterGapWarning)
+            .evaluate()
+            .isNotEmpty;
+      }
 
-    // Crossing the boundary forward marks chapter 1 read.
-    expect(
-      repo.putChapterCalls.any(
-        (c) => c.chapterId == 1 && c.patch.isRead == true,
-      ),
-      isTrue,
-      reason: 'chapter 1 was not marked read on the forward crossing',
-    );
-  });
+      expect(sawGapWarning, nextNumber == 5);
 
-  Future<_RecordingRepo> pumpSingleChapter(WidgetTester tester) async {
+      expect(tester.takeException(), isNull);
+
+      // We must have crossed into chapter 2 — its page count (2) now drives the
+      // seekbar, which never shows "/ 2" while reading the 3-page chapter 1.
+      expect(
+        find.textContaining('/ 2'),
+        findsOneWidget,
+        reason: 'reader never crossed into chapter 2',
+      );
+
+      // Crossing the boundary forward marks chapter 1 read.
+      expect(
+        repo.putChapterCalls.any(
+          (c) => c.chapterId == 1 && c.patch.isRead == true,
+        ),
+        isTrue,
+        reason: 'chapter 1 was not marked read on the forward crossing',
+      );
+    });
+  }
+
+  Future<_RecordingRepo> pumpSingleChapter(
+    WidgetTester tester, {
+    bool withGap = false,
+    bool reduceMotion = false,
+  }) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    SharedPreferences.setMockInitialValues(const {});
+    SharedPreferences.setMockInitialValues(const {
+      'autoAdvanceIntervalSeconds': 1,
+    });
     final prefs = await SharedPreferences.getInstance();
     final repo = _RecordingRepo();
     final ch1 = _chapter(id: 1, sourceOrder: 1, pageCount: 3);
+    final ch5 = _chapter(id: 5, sourceOrder: 5, pageCount: 3);
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
+          appReduceMotionProvider.overrideWith(
+            () => _FixedReduceMotion(reduceMotion),
+          ),
           mangaBookRepositoryProvider.overrideWithValue(repo),
           mangaWithIdProvider(
             mangaId: 1,
@@ -251,6 +287,17 @@ void main() {
             mangaId: 1,
             chapterId: 1,
           ).overrideWithValue(null),
+          if (withGap) ...[
+            getNextAndPreviousChaptersProvider(
+              mangaId: 1,
+              chapterId: 1,
+              readerScanlatorGroup: '',
+            ).overrideWithValue((first: ch5, second: null)),
+            chapterProvider(chapterId: 5).overrideWith((ref) => ch5),
+            chapterPagesProvider(
+              chapterId: 5,
+            ).overrideWith((ref) => _pages(5, 3)),
+          ],
           trackerRepositoryProvider.overrideWithValue(_FakeTrackerRepository()),
           updateProgressAfterReadingProvider.overrideWith(
             () => _FixedToggle(false),
@@ -259,6 +306,7 @@ void main() {
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
+          builder: (context, child) => ReduceMotionScope(child: child!),
           home: const ReaderScreen(mangaId: 1, chapterId: 1),
         ),
       ),
@@ -266,6 +314,36 @@ void main() {
     await tester.pumpAndSettle();
     return repo;
   }
+
+  testWidgets('reduced motion turns the page at once', (tester) async {
+    await pumpSingleChapter(tester, reduceMotion: true);
+    expect(find.text('1 / 3'), findsOneWidget);
+
+    await tester.timedDrag(
+      find.byType(PagedReaderViewport),
+      const Offset(-400, 0),
+      const Duration(milliseconds: 80),
+    );
+    await tester.pump();
+
+    expect(find.text('2 / 3'), findsOneWidget);
+  });
+
+  testWidgets('page turns still animate by default', (tester) async {
+    await pumpSingleChapter(tester);
+    expect(find.text('1 / 3'), findsOneWidget);
+
+    await tester.timedDrag(
+      find.byType(PagedReaderViewport),
+      const Offset(-400, 0),
+      const Duration(milliseconds: 80),
+    );
+    await tester.pump();
+
+    expect(find.text('1 / 3'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+  });
 
   testWidgets('saves the visible page after the debounce', (tester) async {
     final repo = await pumpSingleChapter(tester);
@@ -296,6 +374,46 @@ void main() {
     );
   });
 
+  testWidgets(
+    'gap confirmation stops auto-advance and Cancel preserves position',
+    (tester) async {
+      final repo = await pumpSingleChapter(tester, withGap: true);
+      final readerContext = tester.element(find.byType(PagedReaderViewport));
+      final container = ProviderScope.containerOf(readerContext);
+      container.read(autoScrollActiveProvider.notifier).start();
+      await tester.pump();
+      final before = tester
+          .widget<ReaderWrapper>(find.byType(ReaderWrapper))
+          .currentIndex;
+      Actions.invoke(readerContext, NextChapterIntent());
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(container.read(autoScrollActiveProvider), isFalse);
+
+      // Repeated commands must not stack dialogs or advance behind the modal.
+      Actions.invoke(readerContext, NextChapterIntent());
+      Actions.invoke(readerContext, NextScrollIntent());
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(
+        tester.widget<ReaderWrapper>(find.byType(ReaderWrapper)).currentIndex,
+        before,
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<ReaderWrapper>(find.byType(ReaderWrapper)).currentIndex,
+        before,
+      );
+      expect(
+        repo.putChapterCalls.where((call) => call.chapterId == 5),
+        isEmpty,
+      );
+      expect(container.read(autoScrollActiveProvider), isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('flushes the visible page on exit before the debounce fires', (
     tester,
   ) async {
@@ -321,4 +439,174 @@ void main() {
       reason: 'progress was not flushed on exit; ${repo.putChapterCalls}',
     );
   });
+
+  // The reader keeps going across a network change: an endpoint switch (LAN
+  // <-> external) or the server coming back rebuilds every reader provider.
+  group('chapter loading across an endpoint switch', () {
+    Future<Element> pumpReader(
+      WidgetTester tester, {
+      required bool nextKnownBeforeSwitch,
+    }) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      SharedPreferences.setMockInitialValues(const {});
+      final prefs = await SharedPreferences.getInstance();
+      final ch1 = _chapter(id: 1, sourceOrder: 1, pageCount: 3);
+      final ch2 = _chapter(id: 2, sourceOrder: 2, pageCount: 2);
+      final pages1 = _pages(1, 3);
+      final pages2 = _pages(2, 2);
+
+      // Each switch reloads through a dependency change, slowly enough to
+      // show a loading state.
+      Future<T> reloadable<T>(Ref ref, T value) async {
+        if (ref.watch(_endpointProvider) == 0) return value;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        return value;
+      }
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            mangaBookRepositoryProvider.overrideWithValue(_RecordingRepo()),
+            mangaWithIdProvider(
+              mangaId: 1,
+            ).overrideWith(() => _FakeMangaWithId(_manga())),
+            chapterProvider(
+              chapterId: 1,
+            ).overrideWith((ref) => reloadable(ref, ch1)),
+            chapterProvider(
+              chapterId: 2,
+            ).overrideWith((ref) => reloadable(ref, ch2)),
+            chapterPagesProvider(
+              chapterId: 1,
+            ).overrideWith((ref) => reloadable(ref, pages1)),
+            chapterPagesProvider(
+              chapterId: 2,
+            ).overrideWith((ref) => reloadable(ref, pages2)),
+            // Before the switch the list may come from the device and lack
+            // chapter 2 (not downloaded yet); after it, the server's list has it.
+            getNextAndPreviousChaptersProvider(
+              mangaId: 1,
+              chapterId: 1,
+              readerScanlatorGroup: '',
+            ).overrideWith(
+              (ref) => ref.watch(_endpointProvider) > 0 || nextKnownBeforeSwitch
+                  ? (first: ch2, second: null)
+                  : (first: null, second: null),
+            ),
+            getNextAndPreviousChaptersProvider(
+              mangaId: 1,
+              chapterId: 2,
+              readerScanlatorGroup: '',
+            ).overrideWith((ref) {
+              ref.watch(_endpointProvider);
+              return (first: null, second: ch1);
+            }),
+            trackerRepositoryProvider.overrideWithValue(
+              _FakeTrackerRepository(),
+            ),
+            updateProgressAfterReadingProvider.overrideWith(
+              () => _FixedToggle(false),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const ReaderScreen(mangaId: 1, chapterId: 1),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 / 3'), findsOneWidget);
+      return tester.element(find.byType(MultiChapterPagedReaderMode));
+    }
+
+    Future<void> pageForward(WidgetTester tester, int times) async {
+      for (var i = 0; i < times; i++) {
+        await tester.timedDrag(
+          find.byType(PagedReaderViewport),
+          const Offset(-400, 0),
+          const Duration(milliseconds: 80),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
+      }
+    }
+
+    Future<void> switchEndpoint(WidgetTester tester) async {
+      ProviderScope.containerOf(
+        tester.element(find.byType(ReaderScreen)),
+      ).read(_endpointProvider.notifier).switchEndpoint();
+      await tester.pump();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('loads the next chapter after a switch and stays in it '
+        'through another one', (tester) async {
+      final engine = await pumpReader(tester, nextKnownBeforeSwitch: true);
+
+      await pageForward(tester, 1);
+      expect(find.text('2 / 3'), findsOneWidget);
+
+      await switchEndpoint(tester);
+      expect(find.text('2 / 3'), findsOneWidget);
+
+      await pageForward(tester, 5);
+      expect(
+        find.textContaining('/ 2'),
+        findsOneWidget,
+        reason: 'reader never crossed into chapter 2 after the switch',
+      );
+
+      // The reported jump: a switch while reading a chapter loaded in-place
+      // sent the reader back to the chapter it was opened on.
+      await switchEndpoint(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('/ 2'), findsOneWidget);
+      expect(
+        tester.element(find.byType(MultiChapterPagedReaderMode)),
+        same(engine),
+        reason: 'the reader was remounted',
+      );
+    });
+
+    testWidgets('a next chapter missing before the switch loads after it', (
+      tester,
+    ) async {
+      final engine = await pumpReader(tester, nextKnownBeforeSwitch: false);
+
+      await pageForward(tester, 4);
+      expect(find.text('3 / 3'), findsOneWidget);
+
+      await switchEndpoint(tester);
+      // Past the end card, through the transition card, into chapter 2.
+      await pageForward(tester, 5);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.textContaining('/ 2'),
+        findsOneWidget,
+        reason: 'the next chapter never loaded once the list had it',
+      );
+      expect(
+        tester.element(find.byType(MultiChapterPagedReaderMode)),
+        same(engine),
+        reason: 'the reader was remounted',
+      );
+    });
+  });
 }
+
+/// Stands in for the active server endpoint every reader provider depends on.
+class _Endpoint extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void switchEndpoint() => state++;
+}
+
+final _endpointProvider = NotifierProvider<_Endpoint, int>(_Endpoint.new);

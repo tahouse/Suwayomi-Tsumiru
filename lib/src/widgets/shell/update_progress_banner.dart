@@ -21,6 +21,7 @@ import '../../features/settings/presentation/library/widgets/show_update_progres
 import '../../global_providers/global_providers.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../../utils/extensions/custom_extensions.dart';
+import '../../utils/motion/reduce_motion.dart';
 import 'update_banner_state.dart';
 
 /// App-root "Updating library…" strip, shown while a global/category update
@@ -28,15 +29,14 @@ import 'update_banner_state.dart';
 /// (`eu.kanade.presentation.components.Banners.kt`, `IndexingDownloadBanner`)
 /// and reuses [IncognitoBanner]'s placement convention.
 ///
-/// **Visibility rides on a running-only signal, NOT the full status feed.**
-/// The full `updateStatusChanged` feed carries every manga in every job list;
-/// the server can't resolve those job-list fields promptly during a large
-/// library update, so that feed goes silent mid-run. If the banner learned
-/// "is it running" from there, it would show nothing during exactly the
-/// updates it exists for. So on/off comes from the cheap
-/// [updateRunningSocketProvider] (just `isRunning`), and the percentage is a
-/// best-effort enrichment layered on top — present on small/fast updates,
-/// gracefully absent (plain "Updating library…") when the heavy feed stalls.
+/// On/off and the percentage both come from the one progress feed
+/// ([updateProgressSocketProvider]): on/off through
+/// [updateRunningSocketProvider], which changes only on the running edges,
+/// and the counts straight off it. The server keeps those counts in memory,
+/// so the feed stays prompt during a large library update. (The deprecated
+/// full-status feed this replaced resolved every series of every job list on
+/// each push and went silent mid-run, which is why on/off used to ride a
+/// separate running-only feed.)
 ///
 /// `isRunning` is debounced 1000ms **symmetrically** (both edges), matching
 /// Komikku's `Flow<Boolean>.debounce(1000L)` in `BannerProgressStatus.kt` —
@@ -52,7 +52,11 @@ class UpdateProgressBanner extends HookConsumerWidget {
         ref.watch(showUpdateProgressBannerProvider).ifNull(true);
 
     final runSocket = ref.watch(updateRunningSocketProvider);
-    final runFallback = ref.watch(updateRunningSummaryProvider);
+    final runFallback = ref.watch(
+      updateProgressSummaryProvider.select(
+        (progress) => progress.whenData((value) => value?.isRunning),
+      ),
+    );
     // Never trust a frozen frame from before a socket error — once the
     // stream errors, prefer a fresh one-shot read until it recovers.
     final effectiveRun = runSocket.hasError ? runFallback : runSocket;
@@ -60,7 +64,7 @@ class UpdateProgressBanner extends HookConsumerWidget {
     final l10n = context.l10n;
     ref.listen(updateRunningSocketProvider, (previous, next) {
       if (next.hasError && !(previous?.hasError ?? false)) {
-        ref.invalidate(updateRunningSummaryProvider);
+        ref.invalidate(updateProgressSummaryProvider);
       }
       // Hand the optimistic hold back to the real running signal.
       final running = next.value;
@@ -76,7 +80,7 @@ class UpdateProgressBanner extends HookConsumerWidget {
     // while backgrounded (or long before a socket error) isn't shown stale.
     useOnAppLifecycleStateChange((previous, current) {
       if (current == AppLifecycleState.resumed) {
-        ref.invalidate(updateRunningSummaryProvider);
+        ref.invalidate(updateProgressSummaryProvider);
       }
     });
 
@@ -115,17 +119,16 @@ class UpdateProgressBanner extends HookConsumerWidget {
       return null;
     }, [visible]);
 
-    // Only subscribe to the heavy status feed while the bar is actually shown
-    // AND the real run is confirmed (not merely armed) — during the optimistic
-    // window there are no counts yet, so the banner shows the indeterminate
-    // "Updating library…".
-    UpdateStatusDto? status;
+    // Counts only once the real run is confirmed (not merely armed): during
+    // the optimistic window there are none yet, so the banner shows the
+    // indeterminate "Updating library…".
+    UpdateProgressDto? status;
     if (visible && debouncedRunning.value) {
-      final heavySocket = ref.watch(updatesSocketProvider);
-      final heavyFallback = ref.watch(updateSummaryProvider);
-      status = (heavySocket.value?.total.isGreaterThan(0)).ifNull()
-          ? heavySocket.value
-          : heavyFallback.value;
+      final socket = ref.watch(updateProgressSocketProvider);
+      final fallback = ref.watch(updateProgressSummaryProvider);
+      status = (socket.value?.total.isGreaterThan(0)).ifNull()
+          ? socket.value
+          : fallback.value;
     }
 
     // The colour fills up behind the status bar and the content pads below it
@@ -139,44 +142,44 @@ class UpdateProgressBanner extends HookConsumerWidget {
         : View.of(context).viewPadding.top / View.of(context).devicePixelRatio;
 
     final scheme = context.theme.colorScheme;
+    final banner = !visible
+        ? const SizedBox.shrink()
+        : Material(
+            color: scheme.secondary,
+            child: Padding(
+              padding:
+                  EdgeInsets.only(top: topInset) +
+                  const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: scheme.onSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _label(context, status),
+                    style: TextStyle(color: scheme.onSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          );
+    if (context.reduceMotion) return banner;
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
       alignment: Alignment.topCenter,
-      child: !visible
-          ? const SizedBox.shrink()
-          : Material(
-              color: scheme.secondary,
-              child: Padding(
-                  padding: EdgeInsets.only(top: topInset) +
-                      const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: scheme.onSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _label(context, status),
-                        style: TextStyle(
-                          color: scheme.onSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ),
+      child: banner,
     );
   }
 
-  String _label(BuildContext context, UpdateStatusDto? status) {
+  String _label(BuildContext context, UpdateProgressDto? status) {
     final total = status?.total ?? 0;
     if (total <= 0) return context.l10n.updatingLibrary;
     final checked = status?.updateChecked ?? 0;
@@ -208,9 +211,9 @@ Future<void> _notifyUpdateErrors(WidgetRef ref, AppLocalizations l10n) async {
         session() &&
         ref.read(notificationsControllerProvider).acceptsNotification(payload);
     if (!current()) return;
-    final summary = await ref.read(updatesRepositoryProvider).summaryUpdates();
+    final failed =
+        await ref.read(updatesRepositoryProvider).failedUpdateCount() ?? 0;
     if (!current()) return;
-    final failed = summary?.failedJobs.mangaList.length ?? 0;
     if (failed == 0) return;
     final service = LocalNotificationService();
     await service.init();

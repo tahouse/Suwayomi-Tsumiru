@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 const double kDesktopTitleBarHeight = 40;
+const desktopTitleBarDragAreaKey = Key('desktop-title-bar-drag-area');
+const desktopTitleBarControlsKey = Key('desktop-title-bar-controls');
 
 /// Slim, seamless, theme-reactive window title bar. Windows/Linux draw our own
 /// min/max/close on the right; macOS keeps the native traffic lights (left) and
@@ -26,9 +28,22 @@ class DesktopTitleBar extends StatelessWidget {
       color: scheme.surface,
       child: Stack(
         children: [
-          // The whole strip is a drag handle.
-          const Positioned.fill(
-            child: DragToMoveArea(child: SizedBox.expand()),
+          Positioned.fill(
+            child: Row(
+              children: [
+                const Expanded(
+                  child: DragToMoveArea(
+                    key: desktopTitleBarDragAreaKey,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+                if (!Platform.isMacOS)
+                  _WindowButtons(
+                    key: desktopTitleBarControlsKey,
+                    brightness: theme.brightness,
+                  ),
+              ],
+            ),
           ),
           // App name — centred and muted: present, not a banner. IgnorePointer
           // so it doesn't block the drag region beneath it.
@@ -47,13 +62,6 @@ class DesktopTitleBar extends StatelessWidget {
               ),
             ),
           ),
-          // Window controls, pinned right (Windows/Linux); macOS keeps its
-          // native traffic lights on the left, so nothing is drawn there.
-          if (!Platform.isMacOS)
-            Align(
-              alignment: Alignment.centerRight,
-              child: _WindowButtons(brightness: theme.brightness),
-            ),
         ],
       ),
     );
@@ -61,7 +69,7 @@ class DesktopTitleBar extends StatelessWidget {
 }
 
 class _WindowButtons extends StatefulWidget {
-  const _WindowButtons({required this.brightness});
+  const _WindowButtons({super.key, required this.brightness});
   final Brightness brightness;
   @override
   State<_WindowButtons> createState() => _WindowButtonsState();

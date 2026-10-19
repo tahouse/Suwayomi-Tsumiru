@@ -49,7 +49,11 @@ jobs:
       - run: flutter pub get
       - run: flutter gen-l10n
       - run: dart run build_runner build --delete-conflicting-outputs
-      - run: flutter test test/src/widgets/desktop/desktop_window_scaffold_test.dart
+      - name: Test desktop window chrome
+        run: >-
+          flutter test
+          test/src/widgets/desktop/desktop_window_scaffold_test.dart
+          test/src/widgets/desktop/desktop_title_bar_test.dart
       - name: Inject MyAnimeList client id
         run: |
           sed -i "s|defaultValue: '',|defaultValue: '${{ secrets.MAL_CLIENT_ID }}',|" \
